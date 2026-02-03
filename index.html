@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Informe de Solicitudes de Tarjeta</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #f4f6f9;
+      color: #333;
+    }
+    header {
+      background: #1f2a44;
+      color: white;
+      padding: 20px;
+    }
+    section {
+      padding: 20px;
+    }
+    h2 {
+      margin-top: 40px;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 15px;
+    }
+    .card {
+      background: white;
+      padding: 15px;
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    canvas {
+      background: white;
+      padding: 15px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h1>Informe de Solicitudes de Tarjeta</h1>
+  <p>Fecha de generación: <span id="fecha"></span></p>
+</header>
+
+<section>
+  <h2>Resumen Ejecutivo</h2>
+  <p id="resumen">Cargando datos...</p>
+</section>
+
+<section>
+  <h2>Métricas por Grupo (1 y 2)</h2>
+  <div class="cards" id="metricasGrupo"></div>
+</section>
+
+<section>
+  <h2>Métricas por Tipo de Tarjeta</h2>
+  <div class="cards" id="metricasTipo"></div>
+</section>
+
+<section>
+  <h2>Distribución General de Resultados</h2>
+  <canvas id="graficoPie"></canvas>
+</section>
+
+<section>
+  <h2>Altas Diarias</h2>
+  <canvas id="graficoDiario"></canvas>
+</section>
+
+<script>
+document.getElementById("fecha").innerText =
+  new Date().toLocaleDateString();
+
+fetch("data.csv")
+  .then(res => res.text())
+  .then(text => {
+    const rows = text.trim().split("\n").slice(1);
+
+    const data = rows.map(r => {
+      const c = r.split(",");
+
+      // Parse fecha MM/DD/YYYY -> YYYY-MM-DD
+      const fechaOriginal = c[3];
+      const [mes, dia, anio] = fechaOriginal.split("/");
+      const fechaNormalizada = `${anio}-${mes.padStart(2,"0")}-${dia.padStart(2,"0")}`;
+
+      return {
+        resultado: c[1],
+        limite: parseFloat(c[2]) || 0,
+        fecha: fechaNormalizada,
+        grupo: c[4],
+        tipo: c[5]
+      };
+    });
+
+    // ---- PIE CHART ----
+    const resultadosCount = { Aprobado: 0, Negado: 0, "Sin información": 0 };
+    data.forEach(d => resultadosCount[d.resultado]++);
+
+    new Chart(document.getElementById("graficoPie"), {
+      type: "pie",
+      data: {
+        labels: Object.keys(resultadosCount),
+        datasets: [{
+          data: Object.values(resultadosCount)
+        }]
+      }
+    });
+
+    // ---- ALTAS DIARIAS ----
+    const fechas = {};
+    data.forEach(d => {
+      fechas[d.fecha] = (fechas[d.fecha] || 0) + 1;
+    });
+
+    const fechasOrdenadas = Object.keys(fechas).sort();
+
+    new Chart(document.getElementById("graficoDiario"), {
+      type: "bar",
+      data: {
+        labels: fechasOrdenadas,
+        datasets: [{
+          label: "Solicitudes",
+          data: fechasOrdenadas.map(f => fechas[f])
+        }]
+      }
+    });
+
+    // ---- MÉTRICAS POR GRUPO ----
+    const grupos = ["1", "2"];
+    const contGrupo = document.getElementById("metricasGrupo");
+
+    grupos.forEach(g => {
+      const subset = data.filter(d => d.grupo === g);
+      const aprobados = subset.filter(d => d.resultado === "Aprobado");
+      const denegados = subset.filter(d => d.resultado === "Negado");
+
+      const limiteMedio =
+        aprobados.reduce((a,b) => a + b.limite, 0) / (aprobados.length || 1);
+
+      contGrupo.innerHTML += `
+        <div class="card">
+          <h3>Grupo ${g}</h3>
+          <p>Solicitudes: ${subset.length}</p>
+          <p>Aprobados: ${aprobados.length}</p>
+          <p>Denegados: ${denegados.length}</p>
+          <p>% Aprobación: ${Math.round((aprobados.length / (subset.length || 1)) * 100)}%</p>
+          <p>Límite medio: ${limiteMedio.toFixed(0)}</p>
+        </div>`;
+    });
+
+    // ---- MÉTRICAS POR TIPO ----
+    const tipos = ["Particular", "Autónomo"];
+    const contTipo = document.getElementById("metricasTipo");
+
+    tipos.forEach(t => {
+      const subset = data.filter(d => d.tipo === t);
+      const aprobados = subset.filter(d => d.resultado === "Aprobado");
+      const denegados = subset.filter(d => d.resultado === "Negado");
+
+      contTipo.innerHTML += `
+        <div class="card">
+          <h3>${t}</h3>
+          <p>Solicitudes: ${subset.length}</p>
+          <p>Aprobados: ${aprobados.length}</p>
+          <p>Denegados: ${denegados.length}</p>
+          <p>% Aprobación: ${Math.round((aprobados.length / (subset.length || 1)) * 100)}%</p>
+        </div>`;
+    });
+
+    document.getElementById("resumen").innerText =
+      `Se analizaron ${data.length} solicitudes, con una tasa global de aprobación del ${Math.round((resultadosCount["Aprobado"] / data.length) * 100)}%.`;
+  });
+</script>
+
+</body>
+</html>
