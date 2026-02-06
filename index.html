@@ -5,6 +5,7 @@
   <title>Informe de Solicitudes de Tarjeta</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
@@ -27,7 +28,7 @@
     }
     .cards {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
       gap: 15px;
     }
     .card {
@@ -40,6 +41,7 @@
       background: white;
       padding: 15px;
       border-radius: 6px;
+      max-width: 600px;
     }
   </style>
 </head>
@@ -80,18 +82,49 @@
 document.getElementById("fecha").innerText =
   new Date().toLocaleDateString();
 
+/* =======================
+   CSV PARSER ROBUSTO
+   ======================= */
+function parseCSV(text) {
+  const lines = text.trim().split("\n");
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const values = [];
+    let current = "";
+    let insideQuotes = false;
+
+    for (let char of line) {
+      if (char === '"') {
+        insideQuotes = !insideQuotes;
+      } else if (char === "," && !insideQuotes) {
+        values.push(current);
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    values.push(current);
+    rows.push(values);
+  }
+  return rows;
+}
+
+/* =======================
+   CARGA DE DATOS
+   ======================= */
 fetch("data.csv")
   .then(res => res.text())
   .then(text => {
-    const rows = text.trim().split("\n").slice(1);
 
-    const data = rows.map(r => {
-      const c = r.split(",");
+    const rows = parseCSV(text);
 
-      // Parse fecha MM/DD/YYYY -> YYYY-MM-DD
-      const fechaOriginal = c[3];
-      const [mes, dia, anio] = fechaOriginal.split("/");
-      const fechaNormalizada = `${anio}-${mes.padStart(2,"0")}-${dia.padStart(2,"0")}`;
+    const data = rows.map(c => {
+      // Fecha MM/DD/YYYY → YYYY-MM-DD
+      const [mes, dia, anio] = c[3].split("/");
+      const fechaNormalizada =
+        `${anio}-${mes.padStart(2,"0")}-${dia.padStart(2,"0")}`;
 
       return {
         resultado: c[1],
@@ -102,8 +135,15 @@ fetch("data.csv")
       };
     });
 
-    // ---- PIE CHART ----
-    const resultadosCount = { Aprobado: 0, Negado: 0, "Sin información": 0 };
+    /* =======================
+       PIE CHART
+       ======================= */
+    const resultadosCount = {
+      Aprobado: 0,
+      Negado: 0,
+      "Sin información": 0
+    };
+
     data.forEach(d => resultadosCount[d.resultado]++);
 
     new Chart(document.getElementById("graficoPie"), {
@@ -116,7 +156,9 @@ fetch("data.csv")
       }
     });
 
-    // ---- ALTAS DIARIAS ----
+    /* =======================
+       ALTAS DIARIAS
+       ======================= */
     const fechas = {};
     data.forEach(d => {
       fechas[d.fecha] = (fechas[d.fecha] || 0) + 1;
@@ -135,17 +177,19 @@ fetch("data.csv")
       }
     });
 
-    // ---- MÉTRICAS POR GRUPO ----
-    const grupos = ["1", "2"];
+    /* =======================
+       MÉTRICAS POR GRUPO
+       ======================= */
     const contGrupo = document.getElementById("metricasGrupo");
 
-    grupos.forEach(g => {
+    ["1","2"].forEach(g => {
       const subset = data.filter(d => d.grupo === g);
       const aprobados = subset.filter(d => d.resultado === "Aprobado");
       const denegados = subset.filter(d => d.resultado === "Negado");
 
       const limiteMedio =
-        aprobados.reduce((a,b) => a + b.limite, 0) / (aprobados.length || 1);
+        aprobados.reduce((a,b) => a + b.limite, 0) /
+        (aprobados.length || 1);
 
       contGrupo.innerHTML += `
         <div class="card">
@@ -153,16 +197,21 @@ fetch("data.csv")
           <p>Solicitudes: ${subset.length}</p>
           <p>Aprobados: ${aprobados.length}</p>
           <p>Denegados: ${denegados.length}</p>
-          <p>% Aprobación: ${Math.round((aprobados.length / (subset.length || 1)) * 100)}%</p>
-          <p>Límite medio: ${limiteMedio.toFixed(0)}</p>
+          <p>% Aprobación:
+            ${Math.round((aprobados.length / (subset.length || 1)) * 100)}%
+          </p>
+          <p>Límite medio otorgado:
+            ${limiteMedio.toFixed(0)}
+          </p>
         </div>`;
     });
 
-    // ---- MÉTRICAS POR TIPO ----
-    const tipos = ["Particular", "Autónomo"];
+    /* =======================
+       MÉTRICAS POR TIPO
+       ======================= */
     const contTipo = document.getElementById("metricasTipo");
 
-    tipos.forEach(t => {
+    ["Particular","Autónomo"].forEach(t => {
       const subset = data.filter(d => d.tipo === t);
       const aprobados = subset.filter(d => d.resultado === "Aprobado");
       const denegados = subset.filter(d => d.resultado === "Negado");
@@ -173,12 +222,25 @@ fetch("data.csv")
           <p>Solicitudes: ${subset.length}</p>
           <p>Aprobados: ${aprobados.length}</p>
           <p>Denegados: ${denegados.length}</p>
-          <p>% Aprobación: ${Math.round((aprobados.length / (subset.length || 1)) * 100)}%</p>
+          <p>% Aprobación:
+            ${Math.round((aprobados.length / (subset.length || 1)) * 100)}%
+          </p>
         </div>`;
     });
 
+    /* =======================
+       RESUMEN EJECUTIVO
+       ======================= */
     document.getElementById("resumen").innerText =
-      `Se analizaron ${data.length} solicitudes, con una tasa global de aprobación del ${Math.round((resultadosCount["Aprobado"] / data.length) * 100)}%.`;
+      `Se analizaron ${data.length} solicitudes.
+       La tasa global de aprobación es
+       ${Math.round((resultadosCount["Aprobado"] / data.length) * 100)}%.`;
+
+  })
+  .catch(err => {
+    document.getElementById("resumen").innerText =
+      "Error cargando los datos. Revisa el archivo data.csv.";
+    console.error(err);
   });
 </script>
 
