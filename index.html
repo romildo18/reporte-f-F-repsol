@@ -52,7 +52,7 @@
 <script>
 document.getElementById("fecha").innerText = new Date().toLocaleDateString();
 
-/* ========= CSV PARSER ========= */
+/* ===== CSV PARSER (;) ===== */
 function parseCSV(text){
   const lines = text.trim().split("\n");
   const rows = [];
@@ -64,13 +64,13 @@ function parseCSV(text){
   return rows;
 }
 
-/* ========= LIMPIAR MONTO ========= */
+/* ===== LIMPIAR MONTO ===== */
 function limpiarMonto(v){
   if(!v) return 0;
   return Number(v.replace("€","").replace(/\./g,"").replace(",",".").trim()) || 0;
 }
 
-/* ========= NORMALIZAR RESULTADO ========= */
+/* ===== NORMALIZAR RESULTADO ===== */
 function normalizarResultado(v){
   const t = (v||"").toLowerCase();
   if(t.includes("aprob")) return "Aprobado";
@@ -84,34 +84,50 @@ fetch("data.csv")
   const rows = parseCSV(text);
 
   const data = rows.map(c=>{
-    const [m,d,y] = (c[3]||"").split("/");
+    let fechaNormalizada = null;
+    if(c[3]){
+      const [m,d,y] = c[3].split("/");
+      if(y) fechaNormalizada = `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+    }
+
     return {
       resultado: normalizarResultado(c[1]),
       limite: limpiarMonto(c[2]),
-      fecha: y ? `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}` : null,
+      fecha: fechaNormalizada,
       grupo: (c[4]||"").trim(),
       tipo: (c[5]||"").trim()
     };
-  }).filter(d=>d.fecha);
+  });
 
-  /* ========= PIE ========= */
-  const pie = {Aprobado:0,Denegado:0,"Sin información":0};
+  /* ===== PIE (TODOS LOS REGISTROS) ===== */
+  const pie = {Aprobado:0, Denegado:0, "Sin información":0};
   data.forEach(d=>pie[d.resultado]++);
-  new Chart(graficoPie,{type:"pie",data:{labels:Object.keys(pie),datasets:[{data:Object.values(pie)}]}});
 
-  /* ========= ALTAS ========= */
-  const dias={};
-  data.forEach(d=>dias[d.fecha]=(dias[d.fecha]||0)+1);
-  const diasOrd=Object.keys(dias).sort();
-  new Chart(graficoDiario,{type:"bar",data:{labels:diasOrd,datasets:[{label:"Solicitudes",data:diasOrd.map(f=>dias[f])}]}});
+  new Chart(graficoPie,{
+    type:"pie",
+    data:{labels:Object.keys(pie), datasets:[{data:Object.values(pie)}]}
+  });
 
-  /* ========= MÉTRICAS POR GRUPO ========= */
-  const mg=document.getElementById("metricasGrupo");
+  /* ===== ALTAS DIARIAS (SOLO CON FECHA) ===== */
+  const dias = {};
+  data.filter(d=>d.fecha).forEach(d=>{
+    dias[d.fecha]=(dias[d.fecha]||0)+1;
+  });
+  const diasOrd = Object.keys(dias).sort();
+
+  new Chart(graficoDiario,{
+    type:"bar",
+    data:{labels:diasOrd, datasets:[{label:"Solicitudes", data:diasOrd.map(f=>dias[f])}]}
+  });
+
+  /* ===== MÉTRICAS POR GRUPO ===== */
+  const mg = document.getElementById("metricasGrupo");
   ["1","2"].forEach(g=>{
-    const s=data.filter(d=>d.grupo===g);
-    const a=s.filter(d=>d.resultado==="Aprobado");
-    const d=s.filter(d=>d.resultado==="Denegado");
-    const aLim=a.filter(x=>x.limite>0);
+    const s = data.filter(d=>d.grupo===g);
+    const a = s.filter(d=>d.resultado==="Aprobado");
+    const d = s.filter(d=>d.resultado==="Denegado");
+    const aLim = a.filter(x=>x.limite>0);
+
     const pct = (a.length+d.length)>0 ? Math.round(a.length/(a.length+d.length)*100) : 0;
     const lim = aLim.length ? Math.round(aLim.reduce((x,y)=>x+y.limite,0)/aLim.length) : 0;
 
@@ -126,12 +142,12 @@ fetch("data.csv")
       </div>`;
   });
 
-  /* ========= MÉTRICAS POR TIPO ========= */
-  const mt=document.getElementById("metricasTipo");
+  /* ===== MÉTRICAS POR TIPO ===== */
+  const mt = document.getElementById("metricasTipo");
   ["Particular","Autónomo"].forEach(t=>{
-    const s=data.filter(d=>d.tipo===t);
-    const a=s.filter(d=>d.resultado==="Aprobado");
-    const d=s.filter(d=>d.resultado==="Denegado");
+    const s = data.filter(d=>d.tipo===t);
+    const a = s.filter(d=>d.resultado==="Aprobado");
+    const d = s.filter(d=>d.resultado==="Denegado");
     const pct = (a.length+d.length)>0 ? Math.round(a.length/(a.length+d.length)*100) : 0;
 
     mt.innerHTML+=`
@@ -144,13 +160,13 @@ fetch("data.csv")
       </div>`;
   });
 
+  /* ===== RESUMEN ===== */
+  const totalA = data.filter(d=>d.resultado==="Aprobado").length;
+  const totalD = data.filter(d=>d.resultado==="Denegado").length;
+
   document.getElementById("resumen").innerText =
     `Se analizaron ${data.length} solicitudes. La tasa global de aprobación es del ${
-      Math.round(
-        data.filter(d=>d.resultado==="Aprobado").length /
-        (data.filter(d=>d.resultado==="Aprobado").length +
-         data.filter(d=>d.resultado==="Denegado").length) * 100
-      )
+      (totalA+totalD)>0 ? Math.round(totalA/(totalA+totalD)*100) : 0
     }%.`;
 });
 </script>
